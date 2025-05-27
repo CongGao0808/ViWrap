@@ -1846,7 +1846,7 @@ def get_run_input_arguments(args):
     argu_items.append('--db_dir' + ' ' + args['db_dir'])
     argu_items.append('--identify_method' + ' ' + args['identify_method'])
     if args['conda_env_dir'] != 'none': argu_items.append('--conda_env_dir' + ' ' + args['conda_env_dir'])
-    argu_items.append('--threads' + ' ' + args['threads'])
+    argu_items.append('--threads' + ' ' + str(args['threads']))
     if args['virome']: argu_items.append('--virome')
     argu_items.append('--input_length_limit' + ' ' + str(args['input_length_limit']))
     if args['custom_MAGs_dir'] != 'none': argu_items.append('--custom_MAGs_dir' + ' ' + args['custom_MAGs_dir'])
