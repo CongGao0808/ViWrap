@@ -324,11 +324,11 @@ def main(args):
     
     #### double check ####
     for source, path in fasta_files.items():
-    print(f'正在处理 {source}...')
-    if os.path.exists(path):
-        read_fasta_file(path, source, id_to_sequence)
-    else:
-        print(f"Warning: {path} not found, skipping {source}.")
+        print(f'正在处理 {source}...')
+        if os.path.exists(path):
+            read_fasta_file(path, source, id_to_sequence)
+        else:
+            print(f"Warning: {path} not found, skipping {source}.")
     ####
     
     ## 依次处理每个fasta文件
