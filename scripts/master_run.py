@@ -217,8 +217,8 @@ def main(args):
         os.mkdir(args['out_dir'])
     
     logger_main =get_logger(args)
-    logger_vb = get_logger(args)
-    logger_vs = get_logger(args)
+    # logger_vb = get_logger(args)
+    # logger_vs = get_logger(args)
 
     ## Store the input arguments
     issued_command = scripts.module.get_run_input_arguments(args)
@@ -332,9 +332,9 @@ def main(args):
     ####
     
     ## 依次处理每个fasta文件
-    for source, path in fasta_files.items():
-        print(f'正在处理 {source}...')
-        read_fasta_file(path, source, id_to_sequence)
+    # for source, path in fasta_files.items():
+    #     print(f'正在处理 {source}...')
+    #     read_fasta_file(path, source, id_to_sequence)
 
     ## 输出结果
     output_file = os.path.join(args['out_dir'], 'union_longest.fasta')
