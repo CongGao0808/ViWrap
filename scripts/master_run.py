@@ -293,7 +293,7 @@ def main(args):
     
     # run vb, vs parallelly
     
-    with ProcessPoolExecutor(max_workers=30) as executor:
+    with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(vb, args),   # 第一个任务
             executor.submit(vs, args),    # 第二个任务
@@ -310,8 +310,9 @@ def main(args):
 
     # Step 3 Metagenomic mapping
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger.info(f"{time_current} | Map reads to metagenome. In processing...")
+    logger_main.info(f"{time_current} | Map reads to metagenome. In processing...")
     
+    print(f"VIBRANT fasta path: {os.path.join(args['vibrant_outdir'], f'VIBRANT_phages_{Path(args['input_metagenome']).stem}_vb', f'{Path(args['input_metagenome']).stem}_vb.phages_combined.fna')}")
     fasta_files = {
         'DeepVirFinder': os.path.join(args['dvf_outdir'], 'final_dvf_virus.fasta'),
         'geNomad': os.path.join(args['genomad_outdir'], 'final_genomad_virus.fasta'),
@@ -320,7 +321,16 @@ def main(args):
         'VirSorter2': os.path.join(args['virsorter_outdir'], 'final_vs2_virus.fasta')
     }
     id_to_sequence = {}  # {main_id: {'sequence': ..., 'source': ..., 'length': ...}}
-
+    
+    #### double check ####
+    for source, path in fasta_files.items():
+    print(f'正在处理 {source}...')
+    if os.path.exists(path):
+        read_fasta_file(path, source, id_to_sequence)
+    else:
+        print(f"Warning: {path} not found, skipping {source}.")
+    ####
+    
     ## 依次处理每个fasta文件
     for source, path in fasta_files.items():
         print(f'正在处理 {source}...')
@@ -328,6 +338,7 @@ def main(args):
 
     ## 输出结果
     output_file = os.path.join(args['out_dir'], 'union_longest.fasta')
+    print(f"Writing union fasta to {output_file}")
     with open(output_file, 'w') as f:
         for main_id, info in id_to_sequence.items():
             f.write(f'>{main_id}_{info["source"]}\n{info["sequence"]}\n')
@@ -345,12 +356,12 @@ def main(args):
         scripts.module.parse_to_get_vRhyme_input_coverage_file(viral_scaffold, args['mapping_outdir'])
 
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger.info(f"{time_current} | Map reads to metagenome. Finished")
+    logger_main.info(f"{time_current} | Map reads to metagenome. Finished")
 
     
     # Step 4 Run vRhyme
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger.info(f"{time_current} | Run vRhyme to bin viral scaffolds. In processing...")        
+    logger_main.info(f"{time_current} | Run vRhyme to bin viral scaffolds. In processing...")        
     
     ## Step 4.1 Run vRhyme to get the original vRhyme_best_bins    
     os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-vRhyme')} python {os.path.join(args['root_dir'],'scripts/run_vRhyme.py')} {viral_scaffold} {args['vrhyme_outdir']} {args['mapping_outdir']} {args['threads']}")
@@ -385,5 +396,5 @@ def main(args):
     scripts.module.make_vRhyme_best_bins_fasta_modified(vRhyme_best_bin_dir, vRhyme_best_bin_dir_modified, None, vRhyme_best_bin_scaffold_complete_info)    
 
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger.info(f"{time_current} | Run vRhyme to bin viral scaffolds. Finished") 
+    logger_main.info(f"{time_current} | Run vRhyme to bin viral scaffolds. Finished") 
    
