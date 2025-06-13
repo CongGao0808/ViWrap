@@ -1199,7 +1199,7 @@ def make_vRhyme_best_bins_fasta_modified(vRhyme_best_bin_dir, vRhyme_best_bin_di
     # Step 1 Get vRhyme_bin_to_split list 
     vRhyme_bin_to_split = []
     
-    ### Step 1: 只在生命周期文件存在且非空且非None时读取
+    # Step 1: 只在生命周期文件存在且非空且非None时读取
     if (
         vRhyme_best_bin_lytic_and_lysogenic_info
         and os.path.exists(vRhyme_best_bin_lytic_and_lysogenic_info)
@@ -1212,6 +1212,7 @@ def make_vRhyme_best_bins_fasta_modified(vRhyme_best_bin_dir, vRhyme_best_bin_di
                 if tmp[0] != 'vRhyme_bin':
                     if tmp[2] == 'split into scaffolds':
                         vRhyme_bin_to_split.append(tmp[0])
+
                     
     with open(vRhyme_best_bin_scaffold_complete_info, 'r') as lines:
         for line in lines:
@@ -2365,10 +2366,10 @@ def get_final_vs2_virus(virsorter_outdir, keep1_list_file, keep2_list_vb_passed_
             
     write_down_seq(all_seq_final, final_vs2_virus_fasta_file)    
     
-def get_dvf_result_seq(args, inner_dvf_outdir, final_dvf_virus_fasta_file, output_surfix='dvf'):
+def get_dvf_result_seq(args, inner_dvf_outdir, final_dvf_virus_fasta_file, output_file_surfix='dvf'):
     # Step 1 Store and filter dvfpred.txt
     dvf_passed_seq = [] 
-    with open(os.path.join(inner_dvf_outdir, f"{Path(args['input_metagenome']).stem}_{output_surfix}.fasta_gt{args['input_length_limit']}bp_dvfpred.txt"),'r') as lines:
+    with open(os.path.join(inner_dvf_outdir, f"{Path(args['input_metagenome']).stem}_{output_file_surfix}.fasta_gt{args['input_length_limit']}bp_dvfpred.txt"),'r') as lines:
         for line in lines:
             line = line.rstrip('\n')
             if not line.startswith('name\t'):

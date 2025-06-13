@@ -3,11 +3,12 @@ import sys
 import argparse
 import logging
 import scripts
-from scripts import module
+from scripts import module_bugs
 from datetime import datetime
 from pathlib import Path
 from glob import glob
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from Bio import SeqIO
 
 def fetch_arguments(parser,root_dir,db_path_default):
     parser.set_defaults(func=main)
@@ -80,16 +81,18 @@ def get_logger(args):
 def dvf(args, output_file_surfix="dvf"):
     print("DVF starts")
     logger = get_logger(args)
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger.info(f"{time_current} | Run DeepVirFinder to identify viruses from input metagenome. In processing...")
     header_replaced_input_metagenome = os.path.join(args['out_dir'], f"{Path(args['input_metagenome']).stem}_{output_file_surfix}.fasta")
     scripts.module.make_short_headers_fasta(args['input_metagenome'], header_replaced_input_metagenome)    
     os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-DVF')} python {os.path.join(args['root_dir'],'scripts/run_DVF.py')} {header_replaced_input_metagenome} {args['dvf_outdir']} {args['input_length_limit']} {args['DVF_db']} >/dev/null 2>&1")
     os.system(f"rm {header_replaced_input_metagenome}")  
-    print("DVF still works")
     final_dvf_virus_fasta_file = os.path.join(args['dvf_outdir'], 'final_dvf_virus.fasta')
     scripts.module.get_dvf_result_seq(args, args['dvf_outdir'], final_dvf_virus_fasta_file)
     
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger.info(f"{time_current} | Run DeepVirFinder to identify viruses from input metagenome. Finished")   
+    logger.info(f"{time_current} | Run DeepVirFinder to identify viruses from input metagenome. Finished") 
+    print("DVF ends")  
 
 def genomad(args):
     print("geNomad starts")
@@ -107,10 +110,12 @@ def genomad(args):
     genomad_virus_fna = f"{args['genomad_outdir']}/{Path(args['input_metagenome']).stem}_summary/{Path(args['input_metagenome']).stem}_virus.fna"
     genomad_virus_faa = f"{args['genomad_outdir']}/{Path(args['input_metagenome']).stem}_summary/{Path(args['input_metagenome']).stem}_virus_proteins.faa"
     os.system(f"cp {genomad_virus_fna} {args['genomad_outdir']}/final_genomad_virus.fasta; cp {genomad_virus_faa} {args['genomad_outdir']}/final_genomad_virus.faa")
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger.info(f"{time_current} | Run geNomad to identify and annotate viruses from input metagenome. Finished")
     print("geNomad ends")
 
 def vb(args, output_file_surfix="vb"):
-    print("vb start!")
+    print("vb starts")
     logger = get_logger(args)
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger.info(f"{time_current} | Run VIBRANT to identify and annotate viruses from input metagenome. In processing...")
@@ -125,9 +130,10 @@ def vb(args, output_file_surfix="vb"):
 
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger.info(f"{time_current} | Run VIBRANT to identify and annotate viruses from input metagenome. Finished")
+    print("vb ends")
 
 def vs(args, output_file_surfix="vs"):
-    
+    print("vs2 starts")
     logger = get_logger(args)
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger.info(f"{time_current} | Run VirSorter2 to identify viruses from input metagenome. Also plus CheckV to QC and trim, and KEGG, Pfam, and VOG HMMs to annotate viruses. In processing...")    
@@ -178,6 +184,26 @@ def vs(args, output_file_surfix="vs"):
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger.info(f"{time_current} | Run VIBRANT to check \"keep2\" and \"manual_check\" groups and get the final VirSorter2 virus sequences. Finished")  
 
+def extract_main_id(header):
+    """提取主ID"""
+    main_id = header.split('_fragment_')[0]
+    main_id = main_id.split('||')[0]
+    main_id = main_id.split('|')[0]
+    return main_id
+
+def read_fasta_file(fasta_path, source_name, id_dict):
+    """读取fasta文件并更新字典"""
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        main_id = extract_main_id(record.id)
+        seq_len = len(record.seq)
+
+        if main_id not in id_dict or seq_len > id_dict[main_id]['length']:
+            id_dict[main_id] = {
+                'sequence': record.seq,
+                'source': source_name,
+                'length': seq_len
+            }
+
 
 def main(args):
     # Welcome and logger
@@ -191,8 +217,8 @@ def main(args):
         os.mkdir(args['out_dir'])
     
     logger_main =get_logger(args)
-    logger_vb = get_logger(args)
-    logger_vs = get_logger(args)
+    # logger_vb = get_logger(args)
+    # logger_vs = get_logger(args)
 
     ## Store the input arguments
     issued_command = scripts.module.get_run_input_arguments(args)
@@ -267,7 +293,7 @@ def main(args):
     
     # run vb, vs parallelly
     
-    with ProcessPoolExecutor(max_workers=2) as executor:
+    with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(vb, args),   # 第一个任务
             executor.submit(vs, args),    # 第二个任务
@@ -282,4 +308,95 @@ def main(args):
             except Exception as e:
                 print(f"任务出错：{e}")
 
+    # Step 3 Metagenomic mapping
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Map reads to metagenome. In processing...")
     
+    fasta_files = {
+        'DeepVirFinder': os.path.join(args['dvf_outdir'], 'final_dvf_virus.fasta'),
+        'geNomad': os.path.join(args['genomad_outdir'], 'final_genomad_virus.fasta'),
+        'VIBRANT': os.path.join(args['vibrant_outdir'],
+            f"VIBRANT_phages_{Path(args['input_metagenome']).stem}_vb",
+            f"{Path(args['input_metagenome']).stem}_vb.phages_combined.fna"
+        ),
+        #'/data/work/0107231481_ViWrap_0605_2/00_VIBRANT_0107231481.contigs/VIBRANT_phages_0107231481.contigs_vb/0107231481.contigs_vb.phages_combined.fna',
+        'VirSorter2': os.path.join(args['virsorter_outdir'], 'final_vs2_virus.fasta')
+    }
+    id_to_sequence = {}  # {main_id: {'sequence': ..., 'source': ..., 'length': ...}}
+    
+    #### double check ####
+    for source, path in fasta_files.items():
+        print(f'正在处理 {source}...')
+        if os.path.exists(path):
+            read_fasta_file(path, source, id_to_sequence)
+        else:
+            print(f"Warning: {path} not found, skipping {source}.")
+    ####
+    
+    ## 依次处理每个fasta文件
+    # for source, path in fasta_files.items():
+    #     print(f'正在处理 {source}...')
+    #     read_fasta_file(path, source, id_to_sequence)
+
+    ## 输出结果
+    output_file = os.path.join(args['out_dir'], 'union_longest.fasta')
+    print(f"Writing union fasta to {output_file}")
+    with open(output_file, 'w') as f:
+        for main_id, info in id_to_sequence.items():
+            f.write(f'>{main_id}_{info["source"]}\n{info["sequence"]}\n')
+
+    print(f'共提取到 {len(id_to_sequence)} 个唯一ID')
+    print(f'结果已写入 {output_file}')
+
+    viral_scaffold = output_file
+        
+    if args['input_reads'] != 'none':
+        os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Mapping')} python {os.path.join(args['root_dir'],'scripts/mapping_metaG_reads.py')} {viral_scaffold} {args['input_metagenome']} {args['input_reads']} {args['mapping_outdir']} {args['input_reads_type']} {args['reads_mapping_identity_cutoff']} {args['threads']} {args['skip_long_reads_correction']}") #>/dev/null 2>&1
+    elif args['input_cov'] != 'none':
+        os.makedirs(args['mapping_outdir'], exist_ok=True)  # Ensure the directory exists
+        os.system(f"cp {args['input_cov']}  {args['mapping_outdir']}/all_coverm_raw_result.txt")
+        scripts.module.parse_to_get_vRhyme_input_coverage_file(viral_scaffold, args['mapping_outdir'])
+
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Map reads to metagenome. Finished")
+
+    
+    # Step 4 Run vRhyme
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Run vRhyme to bin viral scaffolds. In processing...")        
+    
+    ## Step 4.1 Run vRhyme to get the original vRhyme_best_bins    
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-vRhyme')} python {os.path.join(args['root_dir'],'scripts/run_vRhyme.py')} {viral_scaffold} {args['vrhyme_outdir']} {args['mapping_outdir']} {args['threads']}")
+    vRhyme_best_bin_dir = os.path.join(args['vrhyme_outdir'], 'vRhyme_best_bins_fasta')
+       
+    ## Step 4.2 Get the lytic and lysogenic information for vRhyme_best_bins 
+    # scf2lytic_or_lyso_summary = ''
+    # if args['identify_method'] == 'vb':
+    #     scf2lytic_or_lyso_summary = os.path.join(args['vibrant_outdir'], 'scf2lytic_or_lyso.summary.txt')
+    # elif args['identify_method'] == 'vs':
+    #     scf2lytic_or_lyso_summary = os.path.join(args['virsorter_outdir'], 'scf2lytic_or_lyso.summary.txt')        
+    # elif args['identify_method'] == 'genomad':
+    #     scf2lytic_or_lyso_summary = os.path.join(args['genomad_outdir'], 'scf2lytic_or_lyso.summary.txt')                
+    # elif args['identify_method'] == 'vb-vs-dvf':
+    #     scf2lytic_or_lyso_summary = os.path.join(args['vb_vs_dvf_outdir'],f"VIBRANT_{Path(args['input_metagenome']).stem}", 'scf2lytic_or_lyso.summary.txt')
+    # elif args['identify_method'] == 'vb-vs':        
+    #     scf2lytic_or_lyso_summary = os.path.join(args['vb_vs_outdir'],f"VIBRANT_{Path(args['input_metagenome']).stem}", 'scf2lytic_or_lyso.summary.txt')    
+    # scripts.module.get_vRhyme_best_bin_lytic_and_lysogenic_info(vRhyme_best_bin_dir, args['vrhyme_outdir'], scf2lytic_or_lyso_summary)
+    # vRhyme_best_bin_lytic_and_lysogenic_info = os.path.join(args['vrhyme_outdir'], 'vRhyme_best_bin_lytic_and_lysogenic_info.txt')
+        
+    ## Step 4.3 Get the scaffold complete information for vRhyme_best_bins
+    vRhyme_best_bin_CheckV_result = os.path.join(args['vrhyme_outdir'], 'vRhyme_best_bins_fasta_CheckV_result')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-CheckV')} python {os.path.join(args['root_dir'],'scripts/run_CheckV.py')} {vRhyme_best_bin_dir} {vRhyme_best_bin_CheckV_result} {args['threads']} {args['CheckV_db']}")
+    CheckV_quality_summary = os.path.join(vRhyme_best_bin_CheckV_result, 'CheckV_quality_summary.txt')
+    scripts.module.parse_checkv_result(vRhyme_best_bin_CheckV_result, CheckV_quality_summary)   
+    vRhyme_best_bin_scaffold_complete_info = os.path.join(args['vrhyme_outdir'], 'vRhyme_best_bin_scaffold_complete_info.txt')  
+    scripts.module.get_vRhyme_best_bin_scaffold_complete_info(CheckV_quality_summary, vRhyme_best_bin_scaffold_complete_info)
+    os.system(f"rm -rf {vRhyme_best_bin_CheckV_result}")
+    
+    ## Step 4.4 Get modified vRhyme_best_bins acccording to both lytic and lysogenic and scaffold complete information
+    vRhyme_best_bin_dir_modified = os.path.join(args['vrhyme_outdir'], 'vRhyme_best_bins_fasta_modified')
+    scripts.module.make_vRhyme_best_bins_fasta_modified(vRhyme_best_bin_dir, vRhyme_best_bin_dir_modified, None, vRhyme_best_bin_scaffold_complete_info)    
+
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Run vRhyme to bin viral scaffolds. Finished") 
+   
