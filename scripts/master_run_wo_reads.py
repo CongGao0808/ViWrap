@@ -3,7 +3,7 @@ import os
 import argparse
 import logging
 import scripts
-from scripts import module_bugs
+from scripts import module
 from datetime import datetime
 from pathlib import Path
 from glob import glob
