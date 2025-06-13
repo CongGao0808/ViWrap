@@ -287,8 +287,8 @@ def main(args):
     logger_main.info(f"{time_current} | Looks like the input metagenome and reads, database, and custom MAGs dir (if option used) are now set up well, start up to run ViWrap pipeline")
     
     # run vb, vs parallelly
-    
-    with ProcessPoolExecutor(max_workers=48) as executor:
+    max_workers = max(1, min(int(args['threads']), os.cpu_count() - 2))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(vb, args),   # 第一个任务
             executor.submit(vs, args),    # 第二个任务
@@ -438,7 +438,7 @@ def main(args):
     logger_main.info(f"{time_current} | Run CheckV to evaluate virus genome quality. Finished")
     
     
-    Step 7 Run dRep to get viral species
+    # Step 7 Run dRep to get viral species
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger_main.info(f"{time_current} | Run dRep to cluster virus species. In processing...") 
     
