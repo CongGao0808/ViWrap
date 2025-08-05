@@ -3,7 +3,7 @@ import os
 import argparse
 import logging
 import scripts
-from scripts import module_successJun
+from scripts import module
 from scripts import downloadDB
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +30,7 @@ def set_defaults(args):
     args['Tax_classification_db'] = os.path.join(args['db_dir'],'Tax_classification_db')
     args['VIBRANT_db'] = os.path.join(args['db_dir'],'VIBRANT_db')
     args['VirSorter2_db'] = os.path.join(args['db_dir'],'VirSorter2_db')
-    args['DVF_db'] = os.path.join(args['db_dir'],'DVF_db')    
+    args['DVF_db'] = '/Files/ReferenceData/ViWrap_db/DVF_db/models'    
     args['geNomad_db'] = os.path.join(args['db_dir'],'geNomad_db')   
 
 
