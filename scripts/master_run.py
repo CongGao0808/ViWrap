@@ -553,19 +553,20 @@ def main(args):
     scripts.module.Nlinker(vRhyme_best_bin_dir_modified, args['nlinked_viral_gn_dir'], 'fasta', 1000)  
     scripts.module.Nlinker(vRhyme_unbinned_viral_gn_dir, args['nlinked_viral_gn_dir'], 'fasta', 1000) 
 
-    # Step 9 Prepare iPHoP input file
-    all_vRhyme_fasta_Nlinked = os.path.join(args['vrhyme_outdir'], 'all_vRhyme_fasta.Nlinked_viral_gn.fasta')
-    scripts.module.combine_all_vRhyme_fasta(args['nlinked_viral_gn_dir'], '', all_vRhyme_fasta_Nlinked)
+    # # Step 9 Prepare iPHoP input file
+    # all_vRhyme_fasta_Nlinked = os.path.join(args['vrhyme_outdir'], 'all_vRhyme_fasta.Nlinked_viral_gn.fasta')
+    # scripts.module.combine_all_vRhyme_fasta(args['nlinked_viral_gn_dir'], '', all_vRhyme_fasta_Nlinked)
 
-    print("DEBUG: genus_cluster_info =", genus_cluster_info)
+    # print("DEBUG: genus_cluster_info =", genus_cluster_info)
+
     # Step 6.2 + Step 7 + Step 8 + Step 9 并行执行
     with ProcessPoolExecutor(max_workers=min(4, int(args['threads']))) as executor:
         future_checkv = executor.submit(run_CheckV_full, args)
         future_drep = executor.submit(run_dRep, args, genus_cluster_info, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir)
-        future_tax = executor.submit(run_Tax, args, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, pro2viral_gn_map, genus_cluster_info)
-        future_iphop = executor.submit(run_iPHoP, args, all_vRhyme_fasta_Nlinked)
+        # future_tax = executor.submit(run_Tax, args, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, pro2viral_gn_map, genus_cluster_info)
+        # future_iphop = executor.submit(run_iPHoP, args, all_vRhyme_fasta_Nlinked)
 
-        for future in as_completed([future_checkv, future_drep, future_tax, future_iphop]):
+        for future in as_completed([future_checkv, future_drep]):
             try:
                 future.result()
             except Exception as exc:
@@ -576,21 +577,21 @@ def main(args):
     logger_main.info(f"{time_current} | Run CheckV to evaluate virus genome quality. Finished")
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger_main.info(f"{time_current} | Run dRep to cluster virus species. Finished") 
-    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger_main.info(f"{time_current} | Conduct taxonomic charaterization. Finished")  
-    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger_main.info(f"{time_current} | Conduct Host prediction by iPHoP. Finished")  
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Conduct taxonomic charaterization. Finished")  
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Conduct Host prediction by iPHoP. Finished")  
 
-    # Step 10 Get virus genome abundance
-    print("Get virus genome abundance")
-    os.mkdir(args['viwrap_summary_outdir'])
-    os.system(f"mv {os.path.join(args['out_dir'],'*.txt')} {args['viwrap_summary_outdir']}")
-    virus_raw_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_raw_abundance.txt')
-    scripts.module.get_virus_raw_abundance(args['mapping_outdir'], vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, virus_raw_abundance)
-    sample2read_info_file = os.path.join(args['viwrap_summary_outdir'],'Sample2read_info.txt')
-    virus_normalized_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_normalized_abundance.txt')
-    scripts.module.get_virus_normalized_abundance(args['mapping_outdir'], virus_raw_abundance, virus_normalized_abundance, sample2read_info, sample2read_info_file)
+    # # Step 10 Get virus genome abundance
+    # print("Get virus genome abundance")
+    # os.mkdir(args['viwrap_summary_outdir'])
+    # os.system(f"mv {os.path.join(args['out_dir'],'*.txt')} {args['viwrap_summary_outdir']}")
+    # virus_raw_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_raw_abundance.txt')
+    # scripts.module.get_virus_raw_abundance(args['mapping_outdir'], vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, virus_raw_abundance)
+    # sample2read_info_file = os.path.join(args['viwrap_summary_outdir'],'Sample2read_info.txt')
+    # virus_normalized_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_normalized_abundance.txt')
+    # scripts.module.get_virus_normalized_abundance(args['mapping_outdir'], virus_raw_abundance, virus_normalized_abundance, sample2read_info, sample2read_info_file)
     
-    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger_main.info(f"{time_current} | Get virus genome abundance. Finished") 
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Get virus genome abundance. Finished") 
     
