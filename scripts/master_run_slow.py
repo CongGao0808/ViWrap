@@ -4,7 +4,6 @@ import argparse
 import logging
 import scripts
 import pyfastx
-import shutil
 from scripts import module
 from datetime import datetime
 from pathlib import Path
@@ -217,85 +216,131 @@ def read_fasta_ids(fasta_path):
     """仅提取主ID集合"""
     return set([extract_main_id(record.id) for record in SeqIO.parse(fasta_path, "fasta")])
 
-# def run_CheckV_full(args):
-#     os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-CheckV')} python {os.path.join(args['root_dir'],'scripts/run_CheckV.py')} {args['nlinked_viral_gn_dir']} {args['checkv_outdir']} {args['threads']} {args['CheckV_db']} >/dev/null 2>&1")
-#     CheckV_quality_summary = os.path.join(args['checkv_outdir'], 'CheckV_quality_summary.txt')
-#     scripts.module.parse_checkv_result(args['checkv_outdir'], CheckV_quality_summary)
+def run_CheckV_full(args):
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-CheckV')} python {os.path.join(args['root_dir'],'scripts/run_CheckV.py')} {args['nlinked_viral_gn_dir']} {args['checkv_outdir']} {args['threads']} {args['CheckV_db']} >/dev/null 2>&1")
+    CheckV_quality_summary = os.path.join(args['checkv_outdir'], 'CheckV_quality_summary.txt')
+    scripts.module.parse_checkv_result(args['checkv_outdir'], CheckV_quality_summary)
 
-def prepare_checkv_input(input_dir, temp_fasta_dir):
-    os.makedirs(temp_fasta_dir, exist_ok=True)
-    for file in os.listdir(input_dir):
-        if file.endswith('.fasta'):
-            shutil.copy2(os.path.join(input_dir, file), os.path.join(temp_fasta_dir, file))
-    return temp_fasta_dir
+def run_dRep(args, genus_cluster_info, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir):
+    # Step 7.1
+    scripts.module.get_gn_list_for_genus(
+        genus_cluster_info, 
+        args['drep_outdir'], 
+        vRhyme_best_bin_dir_modified, 
+        vRhyme_unbinned_viral_gn_dir
+    )
+    # Step 7.2
+    viral_genus_genome_list_dir = os.path.join(args['drep_outdir'], 'viral_genus_genome_list')
+    os.system(
+        f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-dRep')} python {os.path.join(args['root_dir'],'scripts/run_dRep.py')} {args['drep_outdir']} {viral_genus_genome_list_dir} {args['threads']} 2000 >/dev/null 2>&1"
+    )
+    species_cluster_info = os.path.join(args['out_dir'], 'Species_cluster_info.txt')
+    scripts.module.parse_dRep(
+        args['out_dir'], 
+        args['drep_outdir'], 
+        species_cluster_info, 
+        genus_cluster_info, 
+        viral_genus_genome_list_dir
+    )
 
-def run_CheckV_and_filter(args, input_dir, output_subdir, min_completeness=50, max_contamination=5):
-    """运行CheckV并过滤结果
-    Args:
-        input_dir: binned或unbinned序列目录
-        output_subdir: 输出子目录名(binned/unbinned)
-    Returns:
-        filtered_dir: 过滤后的序列目录
-        count: 通过过滤的序列数
-    """
-    temp_fasta_dir = os.path.join(args['checkv_outdir'], output_subdir, 'temp_fasta')
-    prepare_checkv_input(input_dir, temp_fasta_dir)
+def run_Tax(args, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, pro2viral_gn_map, genus_cluster_info):
+    tax_refseq_output = os.path.join(args['out_dir'], 'tax_refseq_output.txt')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Tax')} python {os.path.join(args['root_dir'],'scripts/run_Tax_RefSeq.py')} {args['out_dir']} {vRhyme_best_bin_dir_modified} {vRhyme_unbinned_viral_gn_dir} {args['Tax_classification_db']} {pro2viral_gn_map} {args['threads']} {tax_refseq_output}")
+    vog_marker_table = os.path.join(args['Tax_classification_db'], 'VOG_marker_table.txt')
+    tax_vog_output = os.path.join(args['out_dir'], 'tax_vog_output.txt')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Tax')} python {os.path.join(args['root_dir'],'scripts/run_Tax_VOG.py')} {vog_marker_table} {args['out_dir']} {vRhyme_best_bin_dir_modified} {vRhyme_unbinned_viral_gn_dir} {args['Tax_classification_db']} {pro2viral_gn_map} {args['threads']} {tax_vog_output}")
+    tax_vcontact2_output = os.path.join(args['out_dir'], 'tax_vcontact2_output.txt')
+    genome_by_genome_file = os.path.join(args['vcontact2_outdir'], 'genome_by_genome_overview.csv')
+    IMGVR_db_map = os.path.join(args['Tax_classification_db'], 'IMGVR_high-quality_phage_vOTU_representatives_pro2viral_gn_map.csv')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Tax')} python {os.path.join(args['root_dir'],'scripts/run_Tax_vContact2.py')} {genome_by_genome_file} {IMGVR_db_map} {tax_vcontact2_output}")
+    if args['identify_method'] == 'genomad':
+        tax_genomad_tax_output = os.path.join(args['out_dir'], 'tax_genomad_tax_output.txt')
+        genomad_summary_file = os.path.join(args['genomad_outdir'], f"{Path(args['input_metagenome']).stem}_summary", f"{Path(args['input_metagenome']).stem}_virus_summary.tsv") 
+        os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Tax')} python {os.path.join(args['root_dir'],'scripts/run_Tax_geNomad.py')} {genomad_summary_file} {vRhyme_best_bin_dir_modified} {vRhyme_unbinned_viral_gn_dir} {tax_genomad_tax_output}")
+    tax_classification_result = os.path.join(args['out_dir'], 'Tax_classification_result.txt')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-Tax')} python {os.path.join(args['root_dir'],'scripts/run_Tax_combine.py')} {args['identify_method']} {args['out_dir']} {genus_cluster_info} {tax_classification_result}")
+    if args['identify_method'] == 'genomad':
+        os.system(f"rm {tax_refseq_output} {tax_vog_output} {tax_vcontact2_output} {tax_genomad_tax_output}") 
+    else:
+        os.system(f"rm {tax_refseq_output} {tax_vog_output} {tax_vcontact2_output}")
 
+def run_iPHoP(args, all_vRhyme_fasta_Nlinked):
+    # Step 9.1 Host prediction by iPHoP
+    os.system(
+        f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-iPHoP')} "
+        f"python {os.path.join(args['root_dir'],'scripts/run_iPHoP.py')} "
+        f"{all_vRhyme_fasta_Nlinked} {args['iphop_outdir']} {args['iPHoP_db']} {args['threads']} >/dev/null 2>&1"
+    )
+
+    # Step 9.2 Host prediction by iPHoP with custom MAGs
+    if args['custom_MAGs_dir'] != 'none' and args['iPHoP_db_custom'] != 'none' and args['iPHoP_db_custom_pre'] == 'none':
+        all_custom_MAGs_combined_fasta_file = os.path.join(args['iphop_outdir'], 'all_custom_MAGs_combined.fasta')
+        scaffold2MAG_map = scripts.module.make_all_custom_MAGs_combined_fasta_file_and_scaffold2MAG_map(
+            args['custom_MAGs_dir'], all_custom_MAGs_combined_fasta_file)
+        os.system(
+            f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-geNomad')} "
+            f"python {os.path.join(args['root_dir'],'scripts/run_geNomad.py')} "
+            f"{all_custom_MAGs_combined_fasta_file} {args['iphop_outdir']} {args['threads']} {args['db_dir']} >/dev/null 2>&1"
+        )
+        scaffold2MAG_map = scripts.module.update_scaffold2MAG_map_according_to_geNomad_result_and_make_filtered_MAGs(
+            args['iphop_outdir'], scaffold2MAG_map)
+        custom_MAGs_filtered_dir  = os.path.join(args['iphop_outdir'], 'custom_MAGs_filtered_dir')
+        
+        os.system(
+            f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-GTDBTk')} "
+            f"python {os.path.join(args['root_dir'],'scripts/add_custom_MAGs_to_host_db__make_gtdbtk_results.py')} "
+            f"{args['out_dir']} {custom_MAGs_filtered_dir} {args['threads']} >/dev/null 2>&1"
+        )
+        os.system(
+            f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-iPHoP')} "
+            f"python {os.path.join(args['root_dir'],'scripts/add_custom_MAGs_to_host_db__add_to_db.py')} "
+            f"{args['out_dir']} {custom_MAGs_filtered_dir} {args['iPHoP_db']} {args['iPHoP_db_custom']} >/dev/null 2>&1"
+        )
+        os.system(
+            f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-iPHoP')} "
+            f"python {os.path.join(args['root_dir'],'scripts/run_iPHoP.py')} "
+            f"{all_vRhyme_fasta_Nlinked} {args['iphop_custom_outdir']} {args['iPHoP_db_custom']} {args['threads']} >/dev/null 2>&1"
+        )
+
+        scaffold2MAG_map_file = os.path.join(args['iphop_outdir'], 'custom_MAGs_scaffold_filtering_map.txt')
+        scripts.module.write_down_scaffold2MAG_map_file(scaffold2MAG_map_file, scaffold2MAG_map)
+
+    elif args['custom_MAGs_dir'] == 'none' and args['iPHoP_db_custom'] == 'none' and args['iPHoP_db_custom_pre'] != 'none':
+    
+        os.system(
+            f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-iPHoP')} "
+            f"python {os.path.join(args['root_dir'],'scripts/run_iPHoP.py')} "
+            f"{all_vRhyme_fasta_Nlinked} {args['iphop_custom_outdir']} {args['iPHoP_db_custom_pre']} {args['threads']} >/dev/null 2>&1"
+        )
+def run_CheckV_for_bin_type(args, input_dir, output_subdir, bin_type):
+    """运行CheckV评估特定类型(binned/unbinned)的序列"""
     output_dir = os.path.join(args['checkv_outdir'], output_subdir)
-    filtered_dir = os.path.join(output_dir, 'filtered_genomes')
-    os.makedirs(filtered_dir, exist_ok=True)
-
+    os.makedirs(output_dir, exist_ok=True)
+    
     # 运行CheckV
-    os.system(f"conda run -p {args['conda_env_dir']}/ViWrap-CheckV python "
-              f"{args['root_dir']}/scripts/run_CheckV.py "
-              f"{temp_fasta_dir} {output_dir} {args['threads']} {args['CheckV_db']}")
+    os.system(f"conda run -p {args['conda_env_dir']}/ViWrap-CheckV python {args['root_dir']}/scripts/run_CheckV.py "
+              f"{input_dir} {output_dir} {args['threads']} {args['CheckV_db']}")
+    
+    # 解析结果
+    quality_summary = os.path.join(output_dir, 'quality_summary.tsv')
+    return quality_summary, bin_type
 
-    # 过滤结果
-    quality_file = os.path.join(output_dir, 'quality_summary.tsv')
-    passed_count = 0
-
+def run_quality_filter(quality_file, input_dir, min_completeness=50, max_contamination=5):
+    """过滤质量评估结果"""
+    passed_genomes = []
     with open(quality_file) as f:
         header = f.readline()
         for line in f:
             fields = line.strip().split('\t')
             genome_id = fields[0]
-            completeness = float(fields[9]) if fields[9] != 'NA' else 0
-            contamination = float(fields[11]) if fields[11] != 'NA' else 100
-            warnings = fields[13] if len(fields) > 13 else ""
+            completeness = float(fields[2]) if fields[2] != 'NA' else 0
+            contamination = float(fields[3]) if fields[3] != 'NA' else 100
             
-            if (
-                completeness >= min_completeness and
-                contamination <= max_contamination and
-                "no viral genes detected" not in warnings.lower()
-            ):
-                src = os.path.join(input_dir, f"{genome_id}.fasta")
-                if os.path.exists(src):
-                    dst = os.path.join(filtered_dir, f"{genome_id}.fasta")
-                    shutil.copy2(src, dst)
-                    passed_count += 1
-
-    return filtered_dir, passed_count
-
-def run_dRep_direct(args, input_dir, output_subdir):
-    """直接对CheckV过滤后的序列进行dRep去冗余
-    Args:
-        args: 配置参数
-        input_dir: 输入序列目录(CheckV过滤后的高质量序列)
-        output_subdir: 输出子目录名(binned/unbinned)
-    """
-    # 创建输出目录
-    output_dir = os.path.join(args['drep_outdir'], output_subdir)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 运行dRep
-    os.system(
-        f"conda run -p {args['conda_env_dir']}/ViWrap-dRep "
-        f"python {args['root_dir']}/scripts/run_dRep.py "
-        f"{output_dir} {input_dir} {args['threads']} 2000"
-    )
-    
-    return output_dir
-
+            if completeness >= min_completeness and contamination <= max_contamination:
+                src_fasta = os.path.join(input_dir, f"{genome_id}.fasta")
+                if os.path.exists(src_fasta):
+                    passed_genomes.append(genome_id)
+    return passed_genomes
 
 # The main ViWrap pipeline    
 def main(args):
@@ -498,74 +543,78 @@ def main(args):
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger_main.info(f"{time_current} | Run vRhyme to bin viral scaffolds. Finished") 
     
-    # Step 4-5 Run processing for unbinned sequences
+    
+    # Step 5 Run vContact2
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
     logger_main.info(f"{time_current} | Run vContact2 to cluster viral genomes. In processing...")    
     
-    ## Make unbinned viral gn folder
+    ## Step 5.1 Make unbinned viral gn folder
     vRhyme_unbinned_viral_gn_dir = os.path.join(args['vrhyme_outdir'], 'vRhyme_unbinned_viral_gn_fasta')
     scripts.module.make_unbinned_viral_gn(viral_scaffold, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir)
-    print("vRhyme unbinned viral gn established")
-    
-    # Step 5: CheckV质量评估和dRep去冗余(binned和unbinned序列并行处理)
+
+    ## Step 5.2 Prepare pro2viral_gn map file
+    pro2viral_gn_map = os.path.join(args['vrhyme_outdir'], 'pro2viral_gn_map.csv')
+    scripts.module.get_pro2viral_gn_map(vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, pro2viral_gn_map)
+
+    ## Step 5.3 Make all vRhyme viral gn combined faa file
+    all_vRhyme_faa = os.path.join(args['vrhyme_outdir'], 'all_vRhyme_faa.faa')
+    scripts.module.combine_all_vRhyme_faa(vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, all_vRhyme_faa)
+
+    ## Step 5.4 Run vContact2
+    cluster_one_jar = os.path.join(args['conda_env_dir'], 'ViWrap-vContact2/bin/cluster_one-1.0.jar')
+    os.system(f"conda run -p {os.path.join(args['conda_env_dir'], 'ViWrap-vContact2')} python {os.path.join(args['root_dir'],'scripts/run_vContact2.py')} {all_vRhyme_faa} {pro2viral_gn_map} {args['Tax_classification_db']} {cluster_one_jar} {args['vcontact2_outdir']} {args['threads']} >/dev/null 2>&1")
+    print("Run vContact2")
+
+    ## Step 5.5 Write down genus cluster info
+    genome_by_genome_file = os.path.join(args['vcontact2_outdir'], 'genome_by_genome_overview.csv')
+    genus_cluster_info = os.path.join(args['out_dir'], 'Genus_cluster_info.txt')
+    ref_pro2viral_gn_map = os.path.join(args['Tax_classification_db'], 'IMGVR_high-quality_phage_vOTU_representatives_pro2viral_gn_map.csv')
+    scripts.module.get_genus_cluster_info(genome_by_genome_file, genus_cluster_info, ref_pro2viral_gn_map) 
+ 
     time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-    logger_main.info(f"{time_current} | Running CheckV quality assessment and dRep clustering...")
+    logger_main.info(f"{time_current} | Run vContact2 to cluster viral genomes. Finished")   
+    
 
-    # 并行处理binned和unbinned序列
+    # Step 6 Run CheckV
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Run CheckV to evaluate virus genome quality. In processing...")       
+    ## Step 6.1 Link multiple scaffolds within a bin
+    os.mkdir(args['nlinked_viral_gn_dir'])
+    scripts.module.Nlinker(vRhyme_best_bin_dir_modified, args['nlinked_viral_gn_dir'], 'fasta', 1000)  
+    scripts.module.Nlinker(vRhyme_unbinned_viral_gn_dir, args['nlinked_viral_gn_dir'], 'fasta', 1000) 
+
+    # Step 6.2 + Step 7 + Step 8 + Step 9 并行执行
     with ProcessPoolExecutor(max_workers=min(4, int(args['threads']))) as executor:
-        future_checkv_binned = executor.submit(
-            run_CheckV_and_filter,
-            args,
-            vRhyme_best_bin_dir_modified,
-            'binned'
-        )
-        future_checkv_unbinned = executor.submit(
-            run_CheckV_and_filter,
-            args,
-            vRhyme_unbinned_viral_gn_dir,
-            'unbinned'
-        )
+        future_checkv = executor.submit(run_CheckV_full, args)
+        future_drep = executor.submit(run_dRep, args, genus_cluster_info, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir)
+        # future_tax = executor.submit(run_Tax, args, vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, pro2viral_gn_map, genus_cluster_info)
+        # future_iphop = executor.submit(run_iPHoP, args, all_vRhyme_fasta_Nlinked)
 
-        try:
-            filtered_binned_dir, binned_count = future_checkv_binned.result()
-        except Exception as e:
-            logger_main.error(f"CheckV filtering failed for binned: {e}")
-            filtered_binned_dir, binned_count = None, 0
+        for future in as_completed([future_checkv, future_drep]):
+            try:
+                future.result()
+            except Exception as exc:
+                logger_main.error(f'Error occurred during parallel execution: {exc}')
 
-        try:
-            filtered_unbinned_dir, unbinned_count = future_checkv_unbinned.result()
-        except Exception as e:
-            logger_main.error(f"CheckV filtering failed for unbinned: {e}")
-            filtered_unbinned_dir, unbinned_count = None, 0
+    # Rename logs
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Run CheckV to evaluate virus genome quality. Finished")
+    time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    logger_main.info(f"{time_current} | Run dRep to cluster virus species. Finished") 
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Conduct taxonomic charaterization. Finished")  
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Conduct Host prediction by iPHoP. Finished")  
 
-        future_drep_binned = executor.submit(
-            run_dRep_direct,
-            args,
-            filtered_binned_dir,
-            'binned'
-        )
-        future_drep_unbinned = executor.submit(
-            run_dRep_direct,
-            args,
-            filtered_unbinned_dir,
-            'unbinned'
-        )
-
-        try:
-            drep_binned_dir = future_drep_binned.result()
-        except Exception as e:
-            logger_main.error(f"dRep failed for binned: {e}")
-            drep_binned_dir = None
-
-        try:
-            drep_unbinned_dir = future_drep_unbinned.result()
-        except Exception as e:
-            logger_main.error(f"dRep failed for unbinned: {e}")
-            drep_unbinned_dir = None
-
-        print(f"CheckV and dRep finished: {binned_count} binned, {unbinned_count} unbinned high-quality genomes.")
-
-        time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
-        logger_main.info(f"{time_current} | CheckV quality assessment and dRep clustering completed")
-            
-
+    # # Step 10 Get virus genome abundance
+    # print("Get virus genome abundance")
+    # os.mkdir(args['viwrap_summary_outdir'])
+    # os.system(f"mv {os.path.join(args['out_dir'],'*.txt')} {args['viwrap_summary_outdir']}")
+    # virus_raw_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_raw_abundance.txt')
+    # scripts.module.get_virus_raw_abundance(args['mapping_outdir'], vRhyme_best_bin_dir_modified, vRhyme_unbinned_viral_gn_dir, virus_raw_abundance)
+    # sample2read_info_file = os.path.join(args['viwrap_summary_outdir'],'Sample2read_info.txt')
+    # virus_normalized_abundance = os.path.join(args['viwrap_summary_outdir'],'Virus_normalized_abundance.txt')
+    # scripts.module.get_virus_normalized_abundance(args['mapping_outdir'], virus_raw_abundance, virus_normalized_abundance, sample2read_info, sample2read_info_file)
+    
+    # time_current = f"[{str(datetime.now().replace(microsecond=0))}]"
+    # logger_main.info(f"{time_current} | Get virus genome abundance. Finished")
